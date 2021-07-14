@@ -17,6 +17,6 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         goos: ${{ matrix.goos }}
         goarch: ${{ matrix.goarch }}
-        project_path: "./cmd/sms-env"
-        binary_name: "sms-env"
+        project_path: "./cmd/ssm-env"
+        binary_name: "ssm-env"
         extra_files: README.md
