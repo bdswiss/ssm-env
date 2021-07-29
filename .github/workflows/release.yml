@@ -12,7 +12,7 @@ jobs:
         goarch: [arm64, amd64]
     steps:
     - uses: actions/checkout@v2
-    - uses: wangyoucao577/go-release-action@v1.18
+    - uses: wangyoucao577/go-release-action@v1.19
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         goos: ${{ matrix.goos }}
@@ -20,3 +20,4 @@ jobs:
         project_path: "./cmd/ssm-env"
         binary_name: "ssm-env"
         extra_files: README.md
+        ldflags: "-s -w"
