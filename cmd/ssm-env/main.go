@@ -20,7 +20,6 @@ import (
 )
 
 var VersionString string
-var invalidPattern = regexp.MustCompile(`[^a-zA-Z0-9_]`)
 var procfileRegex = regexp.MustCompile(`^([A-Za-z0-9_]+):\s*(.+)$`)
 
 func main() {
