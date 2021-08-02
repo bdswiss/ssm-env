@@ -20,7 +20,8 @@ import (
 )
 
 var VersionString string
-var InvalidPattern = regexp.MustCompile(`[^a-zA-Z0-9_]`)
+var invalidPattern = regexp.MustCompile(`[^a-zA-Z0-9_]`)
+var procfileRegex = regexp.MustCompile(`^([A-Za-z0-9_]+):\s*(.+)$`)
 
 func main() {
 	log.SetFormatter(&log.TextFormatter{
@@ -58,7 +59,7 @@ func action(c *cli.Context) error {
 		return cli.NewExitError(errorPrefix(err), code)
 	}
 
-	return invoke(c)
+	return runCommand(c)
 }
 
 func cliFlags() []cli.Flag {
@@ -139,8 +140,8 @@ func validateArgs(c *cli.Context) (int, error) {
 	return 0, nil
 }
 
-func invoke(c *cli.Context) error {
-	cmd := exec.Command(c.Args().First(), c.Args().Tail()...)
+func invoke(command string, args []string) error {
+	cmd := exec.Command(command, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -180,4 +181,31 @@ func invoke(c *cli.Context) error {
 			return nil
 		}
 	}
+}
+
+func runCommand(c *cli.Context) error {
+	command := c.Args().First()
+
+	if _, err := os.Stat("Procfile"); os.IsNotExist(err) {
+		return invoke(command, c.Args().Tail())
+	}
+
+	procContent, err := ioutil.ReadFile("Procfile")
+
+	if err != nil {
+		log.Fatalf("unable to read Procfile, %v", err)
+		panic(err)
+	}
+
+	for _, line := range strings.Split(string(procContent), "\n") {
+		if matches := procfileRegex.FindStringSubmatch(line); matches != nil {
+			name, procCommand := matches[1], matches[2]
+			if name == command {
+				cmdParts := strings.Split(strings.Trim(procCommand, " "), " ")
+				return invoke(cmdParts[0], cmdParts[1:])
+			}
+		}
+	}
+
+	return invoke(command, c.Args().Tail())
 }
