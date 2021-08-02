@@ -15,6 +15,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
@@ -97,21 +98,16 @@ func getParameters(c *cli.Context) error {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		log.Fatalf("unable to load SDK config, %v", err)
+		return err
 	}
 	svc := ssm.NewFromConfig(cfg)
-
 	for _, prefix := range c.GlobalStringSlice("prefix") {
-		input := ssm.GetParametersByPathInput{
-			Path:           &prefix,
-			Recursive:      true,
-			WithDecryption: true,
-		}
-		params, err := svc.GetParametersByPath(ctx, &input)
+		parameters, err := getAllParametersByPath(ctx, svc, prefix)
 		if err != nil {
+			log.Fatalf("error loading SSM params, %v", err)
 			return err
 		}
-
-		for _, v := range params.Parameters {
+		for _, v := range parameters {
 			varName := path.Base(*v.Name)
 			if longFileName {
 				longKeyName := strings.Replace(*v.Name, strings.TrimSuffix(prefix, "/")+"/", "", 1)
@@ -125,6 +121,26 @@ func getParameters(c *cli.Context) error {
 
 	}
 	return nil
+}
+
+func getAllParametersByPath(ctx context.Context, client *ssm.Client, path string) ([]types.Parameter, error) {
+	var nextToken *string
+	var params []types.Parameter
+	input := ssm.GetParametersByPathInput{
+		Path:           &path,
+		Recursive:      true,
+		WithDecryption: true,
+	}
+	for ok := true; ok; ok = (nextToken != nil) {
+		input.NextToken = nextToken
+		result, err := client.GetParametersByPath(ctx, &input)
+		if err != nil {
+			return nil, err
+		}
+		params = append(params, result.Parameters...)
+		nextToken = result.NextToken
+	}
+	return params, nil
 }
 
 func validateArgs(c *cli.Context) (int, error) {
