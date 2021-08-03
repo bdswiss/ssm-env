@@ -23,6 +23,13 @@ import (
 var VersionString string
 var procfileRegex = regexp.MustCompile(`^([A-Za-z0-9_]+):\s*(.+)$`)
 
+const (
+	AppRunError = -(iota)
+	RunCommandError = -(iota)
+	ValidateArgsError = -(iota)
+	GetParametersError = -(iota)
+)
+
 func main() {
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp: true,
@@ -37,7 +44,9 @@ func main() {
 	app.Action = func(c *cli.Context) error {
 		return action(c)
 	}
-	app.Run(os.Args)
+	if err := app.Run(os.Args); err != nil {
+		_ = cli.NewExitError(errorPrefix(err), AppRunError)
+	}
 }
 
 func action(c *cli.Context) error {
@@ -50,13 +59,12 @@ func action(c *cli.Context) error {
 		log.SetOutput(os.Stdout)
 	}
 
-	code, err := validateArgs(c)
-	if code > 0 {
-		return cli.NewExitError(errorPrefix(err), code)
+	if err := validateArgs(c); err != nil {
+		return cli.NewExitError(errorPrefix(err), ValidateArgsError)
 	}
 
 	if err := getParameters(c); err != nil {
-		return cli.NewExitError(errorPrefix(err), code)
+		return cli.NewExitError(errorPrefix(err), GetParametersError)
 	}
 
 	return runCommand(c)
@@ -116,7 +124,9 @@ func getParameters(c *cli.Context) error {
 					varName = strings.ReplaceAll(strings.ToUpper(path.Dir(longKeyName)), "/", "_") + "_" + varName
 				}
 			}
-			os.Setenv(varName, *v.Value)
+			if err := os.Setenv(varName, *v.Value); err != nil {
+				return err
+			}
 		}
 
 	}
@@ -131,7 +141,7 @@ func getAllParametersByPath(ctx context.Context, client *ssm.Client, path string
 		Recursive:      true,
 		WithDecryption: true,
 	}
-	for ok := true; ok; ok = (nextToken != nil) {
+	for ok := true; ok; ok = nextToken != nil {
 		input.NextToken = nextToken
 		result, err := client.GetParametersByPath(ctx, &input)
 		if err != nil {
@@ -143,16 +153,16 @@ func getAllParametersByPath(ctx context.Context, client *ssm.Client, path string
 	return params, nil
 }
 
-func validateArgs(c *cli.Context) (int, error) {
+func validateArgs(c *cli.Context) error {
 	if len(c.GlobalStringSlice("prefix")) == 0 {
-		return 1, errors.New("prefix is required")
+		return errors.New("prefix is required")
 	}
 
 	if c.NArg() == 0 {
-		return 2, errors.New("command not specified")
+		return errors.New("command not specified")
 	}
 
-	return 0, nil
+	return nil
 }
 
 func invoke(command string, args []string) error {
@@ -181,7 +191,7 @@ func invoke(command string, args []string) error {
 	for {
 		select {
 		case sig := <-sigCh:
-			// this errror case only seems possible if the OS has released the process
+			// this error case only seems possible if the OS has released the process
 			// or if it isn't started. So we _should_ be able to break
 			if err := cmd.Process.Signal(sig); err != nil {
 				log.WithError(err).WithField("signal", sig).Error("error sending signal")
@@ -209,7 +219,7 @@ func runCommand(c *cli.Context) error {
 
 	if err != nil {
 		log.Fatalf("unable to read Procfile, %v", err)
-		panic(err)
+		os.Exit(RunCommandError)
 	}
 
 	for _, line := range strings.Split(string(procContent), "\n") {
