@@ -24,9 +24,9 @@ var VersionString string
 var procfileRegex = regexp.MustCompile(`^([A-Za-z0-9_]+):\s*(.+)$`)
 
 const (
-	AppRunError = -(iota)
-	RunCommandError = -(iota)
-	ValidateArgsError = -(iota)
+	AppRunError        = -(iota)
+	RunCommandError    = -(iota)
+	ValidateArgsError  = -(iota)
 	GetParametersError = -(iota)
 )
 
@@ -63,8 +63,10 @@ func action(c *cli.Context) error {
 		return cli.NewExitError(errorPrefix(err), ValidateArgsError)
 	}
 
-	if err := getParameters(c); err != nil {
-		return cli.NewExitError(errorPrefix(err), GetParametersError)
+	if !c.GlobalBool("test") {
+		if err := getParameters(c); err != nil {
+			return cli.NewExitError(errorPrefix(err), GetParametersError)
+		}
 	}
 
 	return runCommand(c)
@@ -91,6 +93,16 @@ func cliFlags() []cli.Flag {
 			Name:   "long-env-name",
 			Usage:  "Use full key path as env name",
 			EnvVar: "LONG_ENV_NAME",
+		},
+		cli.StringFlag{
+			Name:   "procfile",
+			Usage:  "Path to procfile to use",
+			EnvVar: "PROCFILE",
+		},
+		cli.BoolFlag{
+			Name:   "test",
+			Usage:  "When running in test mode ssm-env will only launch the target app and will not attempt to read env from SSM",
+			EnvVar: "SSM_ENV_TEST",
 		},
 	}
 }
@@ -210,12 +222,16 @@ func invoke(command string, args []string) error {
 
 func runCommand(c *cli.Context) error {
 	command := c.Args().First()
+	procfileName := c.GlobalString("procfile")
+	if procfileName == "" {
+		procfileName = "Procfile"
+	}
 
-	if _, err := os.Stat("Procfile"); os.IsNotExist(err) {
+	if _, err := os.Stat(procfileName); os.IsNotExist(err) {
 		return invoke(command, c.Args().Tail())
 	}
 
-	procContent, err := ioutil.ReadFile("Procfile")
+	procContent, err := ioutil.ReadFile(procfileName)
 
 	if err != nil {
 		log.Fatalf("unable to read Procfile, %v", err)
