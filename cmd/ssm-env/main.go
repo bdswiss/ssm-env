@@ -104,6 +104,11 @@ func cliFlags() []cli.Flag {
 			Usage:  "When running in test mode ssm-env will only launch the target app and will not attempt to read env from SSM",
 			EnvVar: "SSM_ENV_TEST",
 		},
+		cli.BoolFlag{
+			Name:   "no-expand",
+			Usage:  "ssm-env will not expand environment variables, to expand env VALUE must start from dollar ($) sign, for example HOME=$USER or HOME=${USER}",
+			EnvVar: "NO_EXPAND",
+		},
 	}
 }
 
@@ -141,6 +146,12 @@ func getParameters(c *cli.Context) error {
 			}
 		}
 
+		if !c.GlobalBool("no-expand") {
+			for _, e := range os.Environ() {
+				pair := strings.SplitN(e, "=", 2)
+				os.Setenv(pair[0], os.ExpandEnv(pair[1]))
+			}
+		}
 	}
 	return nil
 }
