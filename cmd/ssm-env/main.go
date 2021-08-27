@@ -149,9 +149,7 @@ func getParameters(c *cli.Context) error {
 		if !c.GlobalBool("no-expand") {
 			for _, e := range os.Environ() {
 				pair := strings.SplitN(e, "=", 2)
-				if strings.HasPrefix(pair[1], "$") {
-					os.Setenv(pair[0], os.ExpandEnv(pair[1]))
-				}
+				os.Setenv(pair[0], os.ExpandEnv(pair[1]))
 			}
 		}
 	}
