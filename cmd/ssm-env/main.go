@@ -216,6 +216,7 @@ func invoke(command string, args []string) error {
 		case sig := <-sigCh:
 			// this error case only seems possible if the OS has released the process
 			// or if it isn't started. So we _should_ be able to break
+			log.Info("Signal %v", sig)
 			if err := cmd.Process.Signal(sig); err != nil {
 				log.WithError(err).WithField("signal", sig).Error("error sending signal")
 				return err
