@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path"
 	"regexp"
+	"runtime"
 	"syscall"
 
 	"strings"
@@ -249,8 +250,11 @@ func runCommand(c *cli.Context) error {
 		log.Fatalf("unable to read Procfile, %v", err)
 		os.Exit(RunCommandError)
 	}
-
-	for _, line := range strings.Split(string(procContent), "\n") {
+	eol := "\n"
+	if runtime.GOOS == "windows" {
+		eol = "\r\n"
+	}
+	for _, line := range strings.Split(string(procContent), eol) {
 		if matches := procfileRegex.FindStringSubmatch(line); matches != nil {
 			name, procCommand := matches[1], matches[2]
 			if name == command {
