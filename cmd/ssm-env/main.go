@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path"
 	"regexp"
-	"runtime"
 	"syscall"
 
 	"strings"
@@ -217,7 +217,6 @@ func invoke(command string, args []string) error {
 		case sig := <-sigCh:
 			// this error case only seems possible if the OS has released the process
 			// or if it isn't started. So we _should_ be able to break
-			log.Info("Signal %v", sig)
 			if err := cmd.Process.Signal(sig); err != nil {
 				log.WithError(err).WithField("signal", sig).Error("error sending signal")
 				return err
@@ -250,13 +249,12 @@ func runCommand(c *cli.Context) error {
 		log.Fatalf("unable to read Procfile, %v", err)
 		os.Exit(RunCommandError)
 	}
-	eol := "\n"
-	if runtime.GOOS == "windows" {
-		eol = "\r\n"
-	}
-	for _, line := range strings.Split(string(procContent), eol) {
+
+	for _, line := range strings.Split(string(procContent), "\n") {
+		fmt.Printf("line = %s", line)
 		if matches := procfileRegex.FindStringSubmatch(line); matches != nil {
 			name, procCommand := matches[1], matches[2]
+			fmt.Printf("name = %s, cmd = %s", name, procCommand)
 			if name == command {
 				cmdParts := strings.Split(strings.Trim(procCommand, " "), " ")
 				return invoke(cmdParts[0], cmdParts[1:])
