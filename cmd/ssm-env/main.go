@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -22,7 +21,7 @@ import (
 )
 
 var VersionString string
-var procfileRegex = regexp.MustCompile(`^([A-Za-z0-9_]+):\s*(.+)$`)
+var procfileRegex = regexp.MustCompile(`^([A-Za-z0-9_\-]+):\s*(.+)$`)
 
 const (
 	AppRunError        = -(iota)
@@ -251,10 +250,8 @@ func runCommand(c *cli.Context) error {
 	}
 
 	for _, line := range strings.Split(string(procContent), "\n") {
-		fmt.Printf("line = %s", line)
 		if matches := procfileRegex.FindStringSubmatch(line); matches != nil {
 			name, procCommand := matches[1], matches[2]
-			fmt.Printf("name = %s, cmd = %s", name, procCommand)
 			if name == command {
 				cmdParts := strings.Split(strings.Trim(procCommand, " "), " ")
 				return invoke(cmdParts[0], cmdParts[1:])
