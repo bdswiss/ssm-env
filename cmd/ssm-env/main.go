@@ -145,12 +145,12 @@ func getParameters(c *cli.Context) error {
 				return err
 			}
 		}
+	}
 
-		if !c.GlobalBool("no-expand") {
-			for _, e := range os.Environ() {
-				pair := strings.SplitN(e, "=", 2)
-				os.Setenv(pair[0], os.ExpandEnv(pair[1]))
-			}
+	if !c.GlobalBool("no-expand") {
+		for _, e := range os.Environ() {
+			pair := strings.SplitN(e, "=", 2)
+			os.Setenv(pair[0], os.ExpandEnv(pair[1]))
 		}
 	}
 	return nil
