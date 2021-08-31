@@ -161,7 +161,6 @@ func getAllParametersByPath(ctx context.Context, client *ssm.Client, path string
 	var params []types.Parameter
 	input := ssm.GetParametersByPathInput{
 		Path:           &path,
-		Recursive:      true,
 		WithDecryption: true,
 	}
 	for ok := true; ok; ok = nextToken != nil {
