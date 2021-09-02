@@ -249,6 +249,7 @@ func runCommand(c *cli.Context) error {
 	}
 
 	for _, line := range strings.Split(string(procContent), "\n") {
+		line = strings.TrimSuffix(line, "\r")
 		if matches := procfileRegex.FindStringSubmatch(line); matches != nil {
 			name, procCommand := matches[1], matches[2]
 			if name == command {
