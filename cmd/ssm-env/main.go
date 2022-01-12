@@ -116,6 +116,14 @@ func errorPrefix(err error) string {
 	return strings.Join([]string{"ERROR:", err.Error()}, " ")
 }
 
+func escapeEnvVar(str string) string {
+	if str == "$" {
+		return "$"
+	}
+
+	return os.Getenv(str)
+}
+
 func getParameters(c *cli.Context) error {
 	ctx := context.TODO()
 	longFileName := c.GlobalBool("long-env-name")
@@ -150,7 +158,10 @@ func getParameters(c *cli.Context) error {
 	if !c.GlobalBool("no-expand") {
 		for _, e := range os.Environ() {
 			pair := strings.SplitN(e, "=", 2)
-			os.Setenv(pair[0], os.ExpandEnv(pair[1]))
+			if err := os.Setenv(pair[0], os.Expand(pair[1], escapeEnvVar)); err != nil {
+				log.Fatalf("error setting env params, %v", err)
+				return err
+			}
 		}
 	}
 	return nil
