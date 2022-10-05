@@ -1,6 +1,6 @@
 module github.com/bdswiss/ssm-env
 
-go 1.16
+go 1.19
 
 require (
 	github.com/aws/aws-sdk-go-v2/config v1.15.11
@@ -9,5 +9,4 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/urfave/cli v1.22.9
 	golang.org/x/sys v0.0.0-20220622161953-175b2fd9d664 // indirect
-	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543 // indirect
 )
