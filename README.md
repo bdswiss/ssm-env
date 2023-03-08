@@ -19,11 +19,17 @@ Default authorization mechanism is used. When running on EC2 or other AWS manage
 ### Procfile support
 You can (optionally) place `Procfile` in the working directory and use process names defined there instead of the actual commands.
 
-```
+```sh
 # Sample Procfile
 web: node ./start-server.js
 ```
 
 ```sh
 ssm-env -p /staging/myapp web
+```
+
+## Building
+
+```sh
+go build ./cmd/ssm-env 
 ```
