@@ -170,10 +170,13 @@ func getParameters(c *cli.Context) error {
 func getAllParametersByPath(ctx context.Context, client *ssm.Client, path string) ([]types.Parameter, error) {
 	var nextToken *string
 	var params []types.Parameter
+	var withDecryption bool = true
+
 	input := ssm.GetParametersByPathInput{
 		Path:           &path,
-		WithDecryption: true,
+		WithDecryption: &withDecryption,
 	}
+
 	for ok := true; ok; ok = nextToken != nil {
 		input.NextToken = nextToken
 		result, err := client.GetParametersByPath(ctx, &input)
@@ -183,6 +186,7 @@ func getAllParametersByPath(ctx context.Context, client *ssm.Client, path string
 		params = append(params, result.Parameters...)
 		nextToken = result.NextToken
 	}
+
 	return params, nil
 }
 
