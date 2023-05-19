@@ -3,15 +3,19 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path"
 	"regexp"
+	"strings"
 	"syscall"
 
-	"strings"
+	"io"
+	"mime/multipart"
+	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -29,6 +33,13 @@ const (
 	ValidateArgsError  = -(iota)
 	GetParametersError = -(iota)
 )
+
+type BugsnagParams struct {
+	shouldSendDumps bool
+	apiKey          string
+	dumpsRootPath   string
+	bugsnagUrl      string
+}
 
 func main() {
 	log.SetFormatter(&log.TextFormatter{
@@ -109,6 +120,35 @@ func cliFlags() []cli.Flag {
 			Usage:  "ssm-env will not expand environment variables, to expand env VALUE must start from dollar ($) sign, for example HOME=$USER or HOME=${USER}",
 			EnvVar: "NO_EXPAND",
 		},
+		cli.BoolFlag{
+			Name:   "uploadDump",
+			Usage:  "Upload core dump when the child process gets signaled",
+			EnvVar: "UPLOAD_DUMP",
+		},
+		cli.StringSliceFlag{
+			Name:   "bugsnagApiKey",
+			Usage:  "Bugsnag API key",
+			EnvVar: "BUGSNAG_API_KEY",
+		},
+		cli.StringSliceFlag{
+			Name:   "dumpSearchPath",
+			Usage:  "Path for core dumps",
+			EnvVar: "DUMP_SEARCH_PATH",
+		},
+		cli.StringSliceFlag{
+			Name:   "bugsnagUrl",
+			Usage:  "Path for core dumps",
+			EnvVar: "BUGSNAG_URL",
+		},
+	}
+}
+
+func extractBugsnagParams(c *cli.Context) BugsnagParams {
+	return BugsnagParams{
+		shouldSendDumps: c.GlobalBool("uploadDump"),
+		apiKey:          c.GlobalString("bugsnagApiKey"),
+		dumpsRootPath:   c.GlobalString("dumpSearchPath"),
+		bugsnagUrl:      c.GlobalString("bugsnagUrl"),
 	}
 }
 
@@ -195,6 +235,24 @@ func validateArgs(c *cli.Context) error {
 		return errors.New("prefix is required")
 	}
 
+	if c.GlobalBool("uploadDump") {
+		errorMessage := ""
+
+		if len(c.GlobalString("bugsnagApiKey")) == 0 {
+			errorMessage = "an API key is required for Bugsnag reporting"
+		}
+		if len(c.GlobalString("dumpSearchPath")) == 0 {
+			errorMessage += "\nWe need dumpSearchPath to know where the dump is"
+		}
+		if len(c.GlobalString("bugsnagUrl")) == 0 {
+			errorMessage += "\nWe need bugsnagUrl to know where to send the dump"
+		}
+
+		if len(errorMessage) > 0 {
+			return errors.New(errorMessage)
+		}
+	}
+
 	if c.NArg() == 0 {
 		return errors.New("command not specified")
 	}
@@ -202,7 +260,89 @@ func validateArgs(c *cli.Context) error {
 	return nil
 }
 
-func invoke(command string, args []string) error {
+func locateDump(rootDirectory string) (result string, err error) {
+	findCommand := exec.Command("find", rootDirectory, "-name", "core.*")
+	executionResult, err := findCommand.CombinedOutput()
+
+	if err == nil {
+		if len(executionResult) > 0 {
+			result = strings.Split(string(executionResult), "\n")[0]
+		} else {
+			err = fmt.Errorf("found 0 dumps at the specified location")
+		}
+	} else {
+		err = fmt.Errorf("an error occurre while searching for the dump: %w;\noutput: %s", err, string(executionResult))
+	}
+
+	return result, err
+}
+
+func sendFile(fieldName string, filePath string, url string) (result string, err error) {
+	pipeReader, pipeWriter := io.Pipe()
+	multipartWriter := multipart.NewWriter(pipeWriter)
+
+	errorsChannel := make(chan error, 1)
+
+	go writeMultipartToPipe(pipeWriter, fieldName, filePath, multipartWriter, errorsChannel)
+
+	response, err := http.Post(url, multipartWriter.FormDataContentType(), pipeReader)
+	writingError := <-errorsChannel
+
+	if err == nil && writingError == nil {
+		defer response.Body.Close()
+		var responseBody []byte
+
+		if err == nil {
+			responseBody, err = io.ReadAll(response.Body)
+			result = string(responseBody)
+		}
+
+		if response.StatusCode != 202 {
+			if err != nil {
+				err = fmt.Errorf("unexpected response code: %d;\nAnd also: %w", response.StatusCode, err)
+			} else {
+				err = fmt.Errorf("unexpected response code: %d", response.StatusCode)
+			}
+		}
+	} else {
+		if err == nil {
+			err = writingError
+		} else if writingError != nil {
+			err = fmt.Errorf("%w; %w", err, writingError)
+		}
+	}
+
+	return result, err
+}
+
+func writeMultipartToPipe(targetPipe *io.PipeWriter, fieldName string, filePath string, multipartWriter *multipart.Writer, errorChannel chan<- error) {
+	file, fileInfo, err := openFile(filePath)
+
+	defer targetPipe.Close()
+	defer file.Close()
+
+	if err == nil {
+		var formFileWriter io.Writer
+
+		if formFileWriter, err = multipartWriter.CreateFormFile(fieldName, fileInfo.Name()); err == nil {
+			if _, err = io.Copy(formFileWriter, file); err == nil {
+				err = multipartWriter.Close()
+			}
+		}
+	}
+
+	errorChannel <- err
+}
+
+func openFile(path string) (file *os.File, fileInfo os.FileInfo, err error) {
+	if file, err = os.Open(path); err == nil {
+		fileInfo, err = file.Stat()
+	}
+
+	return file, fileInfo, err
+}
+
+func invoke(command string, args []string, bugsnagParams BugsnagParams) error {
 	cmd := exec.Command(command, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -237,6 +377,22 @@ func invoke(command string, args []string) error {
 		case err := <-errCh:
 			// the command finished.
 			if err != nil {
+				if exiterr, ok := err.(*exec.ExitError); ok && bugsnagParams.shouldSendDumps {
+					if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+						if status.Signaled() && status.Signal() != syscall.SIGINT {
+							if dumpLocation, dumpSearchError := locateDump(bugsnagParams.dumpsRootPath); dumpSearchError == nil {
+								fileSendResult, fileSendError := sendFile("upload_file_minidump", dumpLocation, fmt.Sprintf("%s/minidump?api_key=%s", bugsnagParams.bugsnagUrl, bugsnagParams.apiKey))
+								if fileSendError != nil {
+									log.WithError(fileSendError).Error(fmt.Sprintf("Failed to send the core dump. %s", fileSendResult))
+								} else {
+									log.Info("sent the core dump to Bugsnag")
+								}
+							} else {
+								log.WithError(err).Error("Failed to locate the core dump. %s", dumpSearchError)
+							}
+						}
+					}
+				}
 				log.WithError(err).Error("command failed")
 				return err
 			}
@@ -251,9 +407,10 @@ func runCommand(c *cli.Context) error {
 	if procfileName == "" {
 		procfileName = "Procfile"
 	}
+	bugsnagParams := extractBugsnagParams(c)
 
 	if _, err := os.Stat(procfileName); os.IsNotExist(err) {
-		return invoke(command, c.Args().Tail())
+		return invoke(command, c.Args().Tail(), bugsnagParams)
 	}
 
 	procContent, err := ioutil.ReadFile(procfileName)
@@ -269,10 +426,10 @@ func runCommand(c *cli.Context) error {
 			name, procCommand := matches[1], matches[2]
 			if name == command {
 				cmdParts := strings.Split(strings.Trim(procCommand, " "), " ")
-				return invoke(cmdParts[0], cmdParts[1:])
+				return invoke(cmdParts[0], cmdParts[1:], bugsnagParams)
 			}
 		}
 	}
 
-	return invoke(command, c.Args().Tail())
+	return invoke(command, c.Args().Tail(), bugsnagParams)
 }
