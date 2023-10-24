@@ -14,13 +14,13 @@ jobs:
           - goos: windows
             goarch: amd64
     steps:
-    - uses: actions/checkout@v3
-    - uses: wangyoucao577/go-release-action@v1.30
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        goos: ${{ matrix.goos }}
-        goarch: ${{ matrix.goarch }}
-        project_path: "./cmd/ssm-env"
-        binary_name: "ssm-env"
-        extra_files: README.md
-        ldflags: "-s -w"
+      - uses: actions/checkout@v3
+      - uses: wangyoucao577/go-release-action@v1.40
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          goos: ${{ matrix.goos }}
+          goarch: ${{ matrix.goarch }}
+          project_path: "./cmd/ssm-env"
+          binary_name: "ssm-env"
+          extra_files: README.md
+          ldflags: "-s -w"
