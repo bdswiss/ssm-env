@@ -9,7 +9,7 @@ ENTRYPOINT ["ssm-env", "-p", "/staging/myapp", "-p", "/staging/common"]
 CMD node index.js
 ```
 
-## AWS Authorization
+### AWS Authorization
 Default authorization mechanism is used. When running on EC2 or other AWS managed envs it will used the instance role. When running locally aws-cli default profile is used which can be overwritten with AWS standard variables.
 
 ### Options
